@@ -270,10 +270,33 @@ https://www.literotica.com/s/story-ch-03"></textarea>
         }
 
         async function fetchChapter(url) {
-            const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
-            if (!response.ok) throw new Error(`Failed to fetch: ${url}`);
+            // Try multiple CORS proxies
+            const proxies = [
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+            ];
             
-            const html = await response.text();
+            let html = null;
+            let lastError = null;
+            
+            for (const proxyUrl of proxies) {
+                try {
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                        html = await response.text();
+                        break;
+                    }
+                } catch (error) {
+                    lastError = error;
+                    console.log(`Proxy failed, trying next...`, error);
+                }
+            }
+            
+            if (!html) {
+                throw new Error(`Failed to fetch ${url}. All proxies failed. ${lastError?.message || ''}`);
+            }
+            
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
@@ -297,38 +320,69 @@ https://www.literotica.com/s/story-ch-03"></textarea>
             }
             author = author || 'Unknown';
             
-            // Get content
+            // Get content - try many different selectors
             let content = '';
-            let contentDiv = doc.querySelector('.aa_ht');
-            if (!contentDiv) {
-                contentDiv = doc.querySelector('div.panel article');
-            }
-            if (!contentDiv) {
-                contentDiv = doc.querySelector('.b-story-body-x');
+            
+            // Try different content container selectors
+            const contentSelectors = [
+                '.aa_ht',
+                'div.panel article',
+                '.b-story-body-x',
+                'div.b-story-body',
+                '.storytext',
+                '#content',
+                'article',
+                '.story-content'
+            ];
+            
+            let contentDiv = null;
+            for (const selector of contentSelectors) {
+                contentDiv = doc.querySelector(selector);
+                if (contentDiv) break;
             }
             
             if (contentDiv) {
-                const unwanted = contentDiv.querySelectorAll('script, .l_bJ, .t_bT, .ad, .advertisement');
+                // Remove unwanted elements
+                const unwanted = contentDiv.querySelectorAll('script, style, .l_bJ, .t_bT, .ad, .advertisement, .ads, .banner');
                 unwanted.forEach(el => el.remove());
                 
+                // Try to get paragraphs first
                 const paragraphs = contentDiv.querySelectorAll('p');
                 if (paragraphs.length > 0) {
                     paragraphs.forEach(p => {
                         const text = p.innerHTML.trim();
-                        if (text && text.length > 0) {
+                        if (text && text.length > 10) { // Skip very short paragraphs
                             content += `<p>${text}</p>\n`;
                         }
                     });
-                } else {
-                    const textContent = contentDiv.textContent.trim();
-                    if (textContent) {
-                        const lines = textContent.split('\n\n');
-                        lines.forEach(line => {
-                            const trimmed = line.trim();
-                            if (trimmed) {
-                                content += `<p>${trimmed}</p>\n`;
-                            }
+                }
+                
+                // If no paragraphs, try getting all text and breaking by double line breaks
+                if (!content || content.trim().length < 100) {
+                    const allText = contentDiv.textContent || contentDiv.innerText;
+                    if (allText) {
+                        const paragraphs = allText.split(/\n\s*\n/).filter(p => p.trim().length > 10);
+                        paragraphs.forEach(p => {
+                            content += `<p>${p.trim()}</p>\n`;
                         });
+                    }
+                }
+            }
+            
+            // Last resort: try to find any div with substantial text content
+            if (!content || content.trim().length < 100) {
+                const divs = doc.querySelectorAll('div');
+                for (const div of divs) {
+                    const text = div.textContent || '';
+                    if (text.length > 500) { // Substantial content
+                        const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 10);
+                        if (paragraphs.length > 3) {
+                            content = '';
+                            paragraphs.forEach(p => {
+                                content += `<p>${p.trim()}</p>\n`;
+                            });
+                            break;
+                        }
                     }
                 }
             }
@@ -341,10 +395,33 @@ https://www.literotica.com/s/story-ch-03"></textarea>
         }
 
         async function fetchSeriesChapters(seriesUrl) {
-            const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(seriesUrl)}`);
-            if (!response.ok) throw new Error(`Failed to fetch series page: ${seriesUrl}`);
+            // Try multiple CORS proxies
+            const proxies = [
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(seriesUrl)}`,
+                `https://corsproxy.io/?${encodeURIComponent(seriesUrl)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(seriesUrl)}`
+            ];
             
-            const html = await response.text();
+            let html = null;
+            let lastError = null;
+            
+            for (const proxyUrl of proxies) {
+                try {
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                        html = await response.text();
+                        break;
+                    }
+                } catch (error) {
+                    lastError = error;
+                    console.log(`Proxy failed, trying next...`, error);
+                }
+            }
+            
+            if (!html) {
+                throw new Error(`Failed to fetch series page. All proxies failed. ${lastError?.message || ''}`);
+            }
+            
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
