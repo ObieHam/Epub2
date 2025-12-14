@@ -181,23 +181,72 @@ https://www.literotica.com/s/chapter-03"></textarea>
         }
 
         async function fetchChapter(url) {
-            const response = await fetch(url);
+            // Use CORS proxy
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+            const response = await fetch(proxyUrl);
             if (!response.ok) throw new Error(`Failed to fetch: ${url}`);
             
-            const html = await response.text();
+            const data = await response.json();
+            const html = data.contents;
+            
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            const title = doc.querySelector('h1')?.textContent?.trim() || 'Untitled';
-            const author = doc.querySelector('.y_eU')?.textContent?.trim() || 'Unknown';
+            // Extract title
+            let title = doc.querySelector('h1')?.textContent?.trim();
+            if (!title) {
+                title = doc.querySelector('.headline')?.textContent?.trim();
+            }
+            if (!title) {
+                title = doc.querySelector('meta[property="og:title"]')?.content?.trim();
+            }
+            title = title || 'Untitled';
             
+            // Extract author
+            let author = doc.querySelector('.y_eU')?.textContent?.trim();
+            if (!author) {
+                author = doc.querySelector('.x_bj a')?.textContent?.trim();
+            }
+            if (!author) {
+                author = doc.querySelector('span[itemprop="author"]')?.textContent?.trim();
+            }
+            author = author || 'Unknown';
+            
+            // Extract content - try multiple selectors
             let content = '';
-            const contentDiv = doc.querySelector('.aa_ht');
+            let contentDiv = doc.querySelector('.aa_ht');
+            
+            if (!contentDiv) {
+                contentDiv = doc.querySelector('div.panel article');
+            }
+            if (!contentDiv) {
+                contentDiv = doc.querySelector('.b-story-body-x');
+            }
+            if (!contentDiv) {
+                contentDiv = doc.querySelector('.storytext');
+            }
+            
             if (contentDiv) {
+                // Remove unwanted elements
+                const unwanted = contentDiv.querySelectorAll('script, style, .ad, .advertisement');
+                unwanted.forEach(el => el.remove());
+                
                 const paragraphs = contentDiv.querySelectorAll('p');
-                paragraphs.forEach(p => {
-                    content += `<p>${p.innerHTML}</p>\n`;
-                });
+                if (paragraphs.length > 0) {
+                    paragraphs.forEach(p => {
+                        const text = p.innerHTML.trim();
+                        if (text) {
+                            content += `<p>${text}</p>\n`;
+                        }
+                    });
+                } else {
+                    // Fallback: get innerHTML directly
+                    content = contentDiv.innerHTML;
+                }
+            }
+            
+            if (!content || content.trim().length < 50) {
+                throw new Error(`No content found for: ${url}. The page structure may have changed.`);
             }
             
             return { title, author, content };
